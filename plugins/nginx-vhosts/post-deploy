@@ -1,11 +1,11 @@
-#!/bin/bash
-set -e
+#!/usr/bin/env bash
+set -eo pipefail; [[ $DOKKU_TRACE ]] && set -x
 APP="$1"; PORT="$2"
-WILDCARD_SSL="$HOME/ssl"
-SSL="$HOME/$APP/ssl"
+WILDCARD_SSL="$DOKKU_ROOT/ssl"
+SSL="$DOKKU_ROOT/$APP/ssl"
 
-if [[ -f "$HOME/VHOST" ]]; then
-  VHOST=$(< "$HOME/VHOST")
+if [[ -f "$DOKKU_ROOT/VHOST" ]]; then
+  VHOST=$(< "$DOKKU_ROOT/VHOST")
   SUBDOMAIN=${APP/%\.${VHOST}/}
   if [[ "$APP" == *.* ]] && [[ "$SUBDOMAIN" == "$APP" ]]; then
     hostname="${APP/\//-}"
@@ -21,15 +21,17 @@ if [[ -f "$HOME/VHOST" ]]; then
 
   # ssl based nginx.conf
   if [[ -n "$SSL_INUSE" ]]; then
-  cat<<EOF > $HOME/$APP/nginx.conf
+  cat<<EOF > $DOKKU_ROOT/$APP/nginx.conf
 upstream $APP { server 127.0.0.1:$PORT; }
 server {
+  listen      [::]:80;
   listen      80;
   server_name $hostname;
   return 301 https://\$host\$request_uri;
 }
 
 server {
+  listen      [::]:443;
   listen      443;
   server_name $hostname;
 
@@ -53,11 +55,14 @@ server {
   }
 }
 EOF
+
+  echo "https://$hostname" > "$DOKKU_ROOT/$APP/URL"
 else
 # default nginx.conf
-  cat<<EOF > $HOME/$APP/nginx.conf
+  cat<<EOF > $DOKKU_ROOT/$APP/nginx.conf
 upstream $APP { server 127.0.0.1:$PORT; }
 server {
+  listen      [::]:80;
   listen      80;
   server_name $hostname;
   location    / {
@@ -73,8 +78,9 @@ server {
   }
 }
 EOF
+
+  echo "http://$hostname" > "$DOKKU_ROOT/$APP/URL"
   fi
   pluginhook nginx-pre-reload $APP
-  nc -U $HOME/reload-nginx
-  echo "$hostname" > "$HOME/$APP/VHOST"
+  sudo /etc/init.d/nginx reload > /dev/null
 fi

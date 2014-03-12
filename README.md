@@ -6,34 +6,43 @@ Docker powered mini-Heroku. The smallest PaaS implementation you've ever seen.
 
 ## Requirements
 
-Assumes Ubuntu 13 x64 right now. Ideally have a domain ready to point to your host. It's designed for and is probably
+Assumes Ubuntu 13 or 12.04 x64 right now. Ideally have a domain ready to point to your host. It's designed for and is probably
 best to use a fresh VM. The bootstrapper will install everything it needs.
 
+**Note: There are known issues with docker and Ubuntu 13.10 ([1](https://github.com/dotcloud/docker/issues/1300), [2](https://github.com/dotcloud/docker/issues/1906)) - use of 12.04 is recommended until these issues are resolved.**
+
 ## Installing
+
+### Stable
+
+    $ wget -qO- https://raw.github.com/progrium/dokku/v0.2.2/bootstrap.sh | sudo DOKKU_TAG=v0.2.2 bash
+
+**Note**: Users on 12.04 will need to run `apt-get install -y python-software-properties` before bootstrapping stable.
+
+### Development
 
     $ wget -qO- https://raw.github.com/progrium/dokku/master/bootstrap.sh | sudo bash
 
 This may take around 5 minutes. Certainly better than the several hours it takes to bootstrap Cloud Foundry.
 
+You may also wish to take a look at the [advanced installation](http://progrium.viewdocs.io/dokku/advanced-installation) document for additional installation options.
+
 ## Configuring
 
-Set up a domain and a wildcard domain pointing to that host. Make sure `/home/git/VHOST` is set to this domain. By default it's set to whatever the hostname the host has. This file only created if the hostname can be resolved by dig (`dig +short $HOSTNAME`). Otherwise you have to create the file manually and set it to your prefered domain. If this file still not present when you push your app, dokku will publish the app with a port number (i.e. `http://example.com:49154` - note the missing subdomain).
+Set up a domain and a wildcard domain pointing to that host. Make sure `/home/dokku/VHOST` is set to this domain. By default it's set to whatever hostname the host has. This file is only created if the hostname can be resolved by dig (`dig +short $(hostname -f)`). Otherwise you have to create the file manually and set it to your preferred domain. If this file still is not present when you push your app, dokku will publish the app with a port number (i.e. `http://example.com:49154` - note the missing subdomain).
 
-You'll have to add a public key associated with a username as it says at the end of the bootstrapper. You'll do something
-like this from your local machine:
+You'll have to add a public key associated with a username by doing something like this from your local machine:
 
-    $ cat ~/.ssh/id_rsa.pub | ssh progriumapp.com "sudo gitreceive upload-key progrium"
+    $ cat ~/.ssh/id_rsa.pub | ssh progriumapp.com "sudo sshcommand acl-add dokku progrium"
 
 That's it!
 
 ## Deploy an App
 
-Right now Buildstep supports buildpacks for Node.js, Ruby, Python, [and more](https://github.com/progrium/buildstep#supported-buildpacks). It's not hard to add more, [go add more](https://github.com/progrium/buildstep#adding-buildpacks)!
-Please check the documentation for your particular build pack as you may need to include configuration files (such as a Procfile) in your project root.
-Let's deploy the [Heroku Node.js sample app](https://github.com/heroku/node-js-sample). All you have to do is add a remote to name the app. It's created on-the-fly.
+Now you can deploy apps on your Dokku. Let's deploy the [Heroku Node.js sample app](https://github.com/heroku/node-js-sample). All you have to do is add a remote to name the app. It's created on-the-fly.
 
     $ cd node-js-sample
-    $ git remote add progrium git@progriumapp.com:node-js-app
+    $ git remote add progrium dokku@progriumapp.com:node-js-app
     $ git push progrium master
     Counting objects: 296, done.
     Delta compression using up to 4 threads.
@@ -51,6 +60,18 @@ Let's deploy the [Heroku Node.js sample app](https://github.com/heroku/node-js-s
 
 You're done!
 
+Right now Buildstep supports buildpacks for Node.js, Ruby, Python, [and more](https://github.com/progrium/buildstep#supported-buildpacks). It's not hard to add more, [go add more](https://github.com/progrium/buildstep#adding-buildpacks)!
+Please check the documentation for your particular build pack as you may need to include configuration files (such as a Procfile) in your project root.
+
+## Remote commands
+
+Dokku commands can be run over ssh. Anywhere you would run `dokku <command>`, just run `ssh -t dokku@progriumapp.com <command>`
+The `-t` is used to request a pty. It is highly recommended to do so.
+To avoid the need to type the `-t` option each time, simply create/modify a section in the `.ssh/config` on the client side, as follows :
+
+    Host progriumapp.com
+    RequestTTY yes
+
 ## Run a command in the app environment
 
 It's possible to run commands in the environment of the deployed application:
@@ -67,62 +88,31 @@ https://github.com/progrium/dokku/wiki/Plugins
 
 ## Removing a deployed app
 
-Currently this is a manual process.
+SSH onto the server, then execute:
 
-To remove an app, ssh to the server, then run:
+    $ dokku delete myapp
 
-    $ sudo docker ps
-    # Then from the list, take repository name of your app and run:
-    $ sudo docker stop app/node-js-sample
-    # To find the ids of images to delete, run:
-    $ sudo docker images
-    # Then from that list, take the IDs corresponding to your app, and
-    # those corresponding to no tag at all, and for each run:
-    $ sudo docker rmi 123456789
+## Environment variable management
 
-## Environment setup
+Typically an application will require some environment variables to run properly. Environment variables may contain private data, such as passwords or API keys, so it is not recommend to store them in your application's repository.
 
-Typically application requires some environment variables to be set up for proper run. Environment variables might contain some private data, like passwords and API keys, so it's not recommend to store them as part of source code.
+The `config` plugin provides the following commands to manage your variables:
+```
+config <app> - display the config vars for an app  
+config:get <app> KEY - display a config value for an app  
+config:set <app> KEY1=VALUE1 [KEY2=VALUE2 ...] - set one or more config vars
+config:unset <app> KEY1 [KEY2 ...] - unset one or more config vars
+```
 
-To setup environment for your application, create file `/home/git/APP_NAME/ENV`. This file is a script that would expose all required environment variables, like:
+## TLS support
 
-    export NODE_ENV=production
-    export MONGODB_PASSWORD=password
-
-Next time the application is deployed, those variables would be exposed by `start` script.
-
-## SSL support
-
-Dokku provides easy SSL support from the box. To enable SSL connection to your application, copy `.crt` and `.key` file into `/home/git/:app/ssl` folder (notice, file names should be `server.crt` and `server.key`, respectively). Redeployment of application will be needed to apply SSL configuration. Once it redeployed, application will be accessible by `https://` (redirection from `http://` is applied as well).
-
-## Advanced installation (for development)
-
-If you plan on developing dokku, the easiest way to install from your own repository is cloning
-the repository and calling the install script. Example:
-
-    $ git clone https://github.com/yourusername/dokku.git
-    $ cd dokku
-    $ sudo make all
-
-The `Makefile` allows source URLs to be overridden to include customizations from your own
-repositories. The DOCKER_URL, GITRECEIVE_URL, PLUGINHOOK_URL, SSHCOMMAND_URL and STACK_URL
-environment variables may be set to override the defaults (see the `Makefile` for how these
-apply). Example:
-
-    $ sudo GITRECEIVE_URL=https://raw.github.com/yourusername/gitreceive/master/gitreceive make all
-
-## Advanced installation (bootstrap a server from your own repository)
-
-The bootstrap script allows the dokku repository URL to be overridden to bootstrap a host from
-your own clone of dokku using the DOKKU_REPO environment variable. Example:
-
-    $ wget https://raw.github.com/progrium/dokku/master/bootstrap.sh
-    $ chmod +x bootstrap.sh
-    $ sudo DOKKU_REPO=https://github.com/yourusername/dokku.git ./bootstrap.sh
+Dokku provides easy TLS support from the box. To enable TLS connection to your application, copy the `.crt` and `.key` files into the `/home/dokku/:app/ssl` folder (notice, file names should be `server.crt` and `server.key`, respectively). Redeployment of the application will be needed to apply TLS configuration. Once it is redeployed, the application will be accessible by `https://` (redirection from `http://` is applied as well).
 
 ## Upgrading
 
 Dokku is in active development. You can update the deployment step and the build step separately.
+
+**Note**: If you are upgrading from a revision prior to [27d4bc8c3c](https://github.com/progrium/dokku/commit/27d4bc8c3c19fe580ef3e65f2f85b85101cd83e4), follow the instructions in [this wiki entry](https://github.com/progrium/dokku/wiki/Migrating-to-Dokku-0.2.0).
 
 To update the deploy step (this is updated less frequently):
 
@@ -144,29 +134,21 @@ eventually replace the Docker image for buildstep.
 
 ## Support
 
-You can use [Github Issues](https://github.com/progrium/dokku/issues), check [Troubleshooting](https://github.com/progrium/dokku/wiki/Troubleshooting) on the wiki, or join us on Freenode in #dokku
+You can use [Github Issues](https://github.com/progrium/dokku/issues), check [Troubleshooting](https://github.com/progrium/dokku/wiki/Troubleshooting) on the wiki, or join us on [freenode in #dokku](https://webchat.freenode.net/?channels=%23dokku)
 
 ## Components
 
  * [Docker](https://github.com/dotcloud/docker) - Container runtime and manager
  * [Buildstep](https://github.com/progrium/buildstep) - Buildpack builder
- * [gitreceive](https://github.com/progrium/gitreceive) - Git push interface
  * [pluginhook](https://github.com/progrium/pluginhook) - Shell based plugins and hooks
  * [sshcommand](https://github.com/progrium/sshcommand) - Fixed commands over SSH
-
-## Ideas for Improvements
-
- * Custom domain support for apps
- * Support more buildpacks (see Buildstep)
- * Use dokku as the system user instead of git
- * Heroku-ish commands to be run via SSH (like [Dokuen](https://github.com/peterkeen/dokuen#available-app-sub-commands))
 
 Looking to keep codebase as simple and hackable as possible, so try to keep your line count down.
 
 ## Things this project won't do
 
- * **Multi-host.** Not a huge leap, but this isn't the project for it. Maybe as Super Dokku.
- * **Multitenancy.** It's ready for it, but again, probably for Super Dokku.
+ * **Multi-host.** Not a huge leap, but this isn't the project for it. Have a look at [Flynn](https://flynn.io/).
+ * **Multitenancy.** It's ready for it, but again, have a look at [Flynn](https://flynn.io/).
  * **Client app.** Given the constraints, running commands remotely via SSH is fine.
 
 ## License

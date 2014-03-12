@@ -1,18 +1,9 @@
-#!/bin/bash
-set -e; case "$1" in
+#!/usr/bin/env bash
+set -eo pipefail; [[ $DOKKU_TRACE ]] && set -x
 
-  url)
-    if [[ -f "/home/git/$2/VHOST" ]]; then
-      echo "http://$(< "/home/git/$2/VHOST")"
-    else
-      cat
-    fi
+case "$1" in
+  help)
+    cat
     ;;
-
-  help) cat && cat<<EOF
-    url <app>       Show the URL for an application
-EOF
-    ;;
-
 esac
-cat
+

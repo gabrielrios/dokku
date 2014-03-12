@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -eo pipefail
 SELF=`which $0`
 VAGRANT_SSH_PORT=${VAGRANT_SSH_PORT:-"2222"}
 PUBLIC_KEY=${PUBLIC_KEY:-"$HOME/.ssh/id_rsa.pub"}
@@ -9,13 +10,13 @@ if [[ ! $(cat ~/.ssh/config 2>/dev/null | grep dokku.me) ]]; then
   touch ~/.ssh/config
   echo "Host dokku.me" >> ~/.ssh/config
   echo "    Port $VAGRANT_SSH_PORT" >> ~/.ssh/config
+  echo "    RequestTTY yes" >> ~/.ssh/config
 fi
 echo "-----> Ensuring Vagrant is running..."
 cd "$(dirname $SELF)/.." && vagrant up | indent
 cd "$(dirname $SELF)"
 
 echo "-----> Installing SSH public keys..."
-cat $PUBLIC_KEY | ssh -o "StrictHostKeyChecking=no" -i ~/.vagrant.d/insecure_private_key vagrant@dokku.me "sudo gitreceive upload-key test"
 cat $PUBLIC_KEY | ssh -o "StrictHostKeyChecking=no" -i ~/.vagrant.d/insecure_private_key vagrant@dokku.me "sudo sshcommand acl-add dokku test"
 
 for app_path in apps/*; do
